@@ -1,80 +1,109 @@
-import json
-from models import ReactionProduct, TemperatureRange, PropellantComposition
-from json_reader import load_combustion_products, load_input_substance
-from utils import (
-    create_matrix_vector,
-    create_temperature_filtered_matrices,
-    create_optimization_matrices
-)
-from scipy.optimize import minimize
+import argparse
+import os
 import numpy as np
-from gibbs import GibbsEnergyCalculator
+from json_reader import load_combustion_products, load_input_substance
+from json_writer import write_to_json
+from optimization import TemperatureOptimizer
+from thermodynamic_properties import ThermodynamicPropertiesCalculator
+from utils import filter_and_construct_matrices, compute_total_mass
 
-# Load data
-combustion_products = load_combustion_products(r"C:\Projects\RocketPropellantTEM\src\combustion_products.json")
-input_substance = load_input_substance(r"C:\Projects\RocketPropellantTEM\src\input_substance.json")
+def main():
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description="Perform thermodynamic optimization for combustion products.")
+    
+    # Required arguments
+    parser.add_argument(
+        "--propellant",
+        required=True,
+        help="Path to the input propellant JSON file (e.g., propellant.json)."
+    )
+    parser.add_argument(
+        "--combustion-products",
+        required=True,
+        help="Path to the combustion products JSON file (e.g., combustion_products.json)."
+    )
+    parser.add_argument(
+        "--pressure",
+        type=float,
+        required=True,
+        help="Chamber pressure in Pascals (Pa). Must be a positive value."
+    )
+    
+    # Optional argument
+    parser.add_argument(
+        "--output-json",
+        default=None,
+        help="Path to the output JSON file. If not provided, no output JSON will be generated."
+    )
+    
+    # Parse arguments
+    args = parser.parse_args()
 
-# Create matrix-vector for input substance
-matrix_vector = create_matrix_vector(input_substance)
-print("Input Substance Vector:\n", matrix_vector)
+    try:
+        # Validate pressure
+        if args.pressure <= 0:
+            raise ValueError("Pressure must be a positive value.")
 
-# Filter products and create matrices
-temperature = 3594.0
-filtered_products, stoichiometric_matrix = create_temperature_filtered_matrices(
-    combustion_products,
-    input_substance,
-    temperature
-)
-print(f"Found {len(filtered_products)} temperature-compatible products")
+        # Resolve absolute paths for input files
+        input_propellant_path = os.path.abspath(args.propellant)
+        combustion_products_path = os.path.abspath(args.combustion_products)
 
-# Create optimization matrices
-initial_guess, coeffs, is_condensed = create_optimization_matrices(filtered_products, temperature)
+        # Load data
+        print("Loading data...")
+        combustion_products = load_combustion_products(combustion_products_path)
+        input_substance = load_input_substance(input_propellant_path)
+        print(f"Loaded {len(combustion_products)} combustion products")
 
-# Initialize calculator with correct parameters
-calculator = GibbsEnergyCalculator(
-    pressure=100*101325,  # Standard pressure in Pa
-    temperature=temperature
-)
+        # Define temperature bounds
+        min_temperature = min(product.temperature_range.min for product in combustion_products)
+        max_temperature = max(product.temperature_range.max for product in combustion_products)
+        delta_temperature = 1e-3
 
-# Set up optimization constraints
-constraints = {
-    'type': 'eq',
-    'fun': lambda x: (stoichiometric_matrix @ x.reshape(-1, 1)).flatten() - matrix_vector.flatten()
-}
+        # Optimize temperature
+        print("Optimizing temperature...")
+        optimizer = TemperatureOptimizer(
+            pressure=args.pressure,
+            min_temperature=min_temperature + delta_temperature,
+            max_temperature=max_temperature - delta_temperature,
+            propellant=input_substance,
+            products=combustion_products
+        )
+        optimal_temperature = optimizer.optimize()
+        print("Optimal Temperature:", optimal_temperature)
 
-# Run optimization
-result = minimize(
-    fun=lambda x: calculator.calculate(x, coeffs, is_condensed),  # Reshape for matrix ops
-    x0=initial_guess.flatten(),  # Flatten initial guess
-    method='trust-constr',
-    constraints=constraints,
-    bounds=[(0, None)] * len(filtered_products),
-    options={
-        'disp': True,
-        'maxiter': 10000,
-    }
-)
+        # Get optimized context and filtered products
+        context = optimizer.optimize_context_at_temperature(optimal_temperature)
+        filtered_products, _ = filter_and_construct_matrices(
+            optimizer.products, optimizer.propellant, optimal_temperature
+        )
 
-# Process results
-if result.success:
-    optimized_quantities = result.x.reshape(1, -1)
-    print("Optimization successful!")
-    print("Final quantities:", optimized_quantities)
-else:
-    print("Optimization failed:", result.message)
+        # Calculate additional thermodynamic properties
+        print("Calculating thermodynamic properties...")
+        thermo_calculator = ThermodynamicPropertiesCalculator(
+            context=context,
+            filtered_products=filtered_products
+        )
+        thermo_calculator.calculate_and_display_properties()
 
-# Calculate final Gibbs energy
-final_gibbs = calculator.calculate(optimized_quantities.flatten(), coeffs, is_condensed)
-print("Final Gibbs energy:", final_gibbs)
+        # Write results to JSON if output path is provided
+        if args.output_json:
+            print("Writing results to JSON...")
+            total_mass = compute_total_mass(input_substance)
+            output_json_path = os.path.abspath(args.output_json)  # Resolve absolute path for output
+            
+            # Ensure the output directory exists
+            output_directory = os.path.dirname(output_json_path)
+            os.makedirs(output_directory, exist_ok=True)  # Create directory if it doesn't exist
 
-from thermodynamics import ThermodynamicCalculator
+            write_to_json(output_json_path, input_substance, total_mass, context, filtered_products)
+            print(f"Results successfully written to {output_json_path}")
+        else:
+            print("Output JSON file path not provided. Skipping JSON generation.")
 
-# Calculate final enthalpy
-total_enthalpy = 0.0
-for i in range(len(result.x)):
-    q = optimized_quantities[0, i]
-    cs = coeffs[i]
-    # Calculate thermodynamic properties
-    h = ThermodynamicCalculator.calculate_enthalpy(cs, temperature)
-    total_enthalpy += q * h
-print("Total enthalpy:", np.sum(total_enthalpy))
+    except Exception as e:
+        # Handle errors and display help information
+        print(f"An error occurred: {e}")
+        parser.print_help()
+
+if __name__ == "__main__":
+    main()
