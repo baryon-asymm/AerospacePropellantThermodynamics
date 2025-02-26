@@ -1,6 +1,8 @@
 import argparse
 import os
+import sys
 import numpy as np
+
 from json_reader import load_combustion_products, load_input_substance
 from json_writer import write_to_json
 from optimization import TemperatureOptimizer
@@ -101,9 +103,8 @@ def main():
             print("Output JSON file path not provided. Skipping JSON generation.")
 
     except Exception as e:
-        # Handle errors and display help information
-        print(f"An error occurred: {e}")
-        parser.print_help()
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
