@@ -11,6 +11,7 @@ from typing import List
 
 from models import PropellantComposition, ReactionProduct
 from calculators import ThermodynamicSystemContext
+from thermodynamic_properties import ThermodynamicPropertiesContext
 
 
 def prepare_combustion_products(
@@ -41,7 +42,7 @@ def write_to_json(
     file_path: str,
     propellant: PropellantComposition,
     total_mass: float,
-    context: ThermodynamicSystemContext,
+    context: ThermodynamicPropertiesContext,
     filtered_products: List[ReactionProduct]
 ):
     """
@@ -55,12 +56,14 @@ def write_to_json(
         filtered_products (List[ReactionProduct]): List of filtered reaction products.
     """
     # Prepare combustion products
-    combustion_products_data = prepare_combustion_products(context, filtered_products)
+    combustion_products_data = prepare_combustion_products(context.thermodynamic_system_context, filtered_products)
 
     # Prepare the overall result
     result = {
-        "pressure": context.pressure,
-        "temperature": float(context.temperature),  # Ensure temperature is converted to float
+        "pressure": context.thermodynamic_system_context.pressure,
+        "temperature": float(context.thermodynamic_system_context.temperature),  # Ensure temperature is converted to float
+        "specific_heat_capacity_volumetric": float(context.specific_heat_capacity_volumetric),  # Ensure heat capacity is converted to float
+        "gas_average_molar_mass": float(context.gas_average_molar_mass),  # Ensure molar mass is converted to float
         "propellant": {
             "enthalpy": propellant.enthalpy,
             "composition": propellant.composition,

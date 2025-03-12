@@ -9,10 +9,28 @@ The calculations are based on the context provided by the `ThermodynamicSystemCo
 """
 
 import numpy as np
+from dataclasses import dataclass
 
-from calculators import ThermodynamicSystemCalculator
+from calculators import ThermodynamicSystemCalculator, ThermodynamicSystemContext
 from utils import parse_chemical_formula, compute_molar_mass
 from constants import GAS_CONSTANT
+
+@dataclass(frozen=True)
+class ThermodynamicPropertiesContext:
+    """Data class for storing thermodynamic properties of the optimized system.
+
+    This data class stores various thermodynamic properties of a combustion system after optimization.
+    The properties include the thermodynamic system context, heat capacity, and average molar mass of gas products.
+
+    Attributes:
+        thermodynamic_system_context (ThermodynamicSystemContext): Context containing system parameters such as
+            temperature, pressure, substance amounts, coefficients, and phase information.
+        specific_heat_capacity_volumetric (float): Volumetric heat capacity of the optimized system.
+        gas_average_molar_mass (float): Average molar mass of gas products.
+    """
+    thermodynamic_system_context: ThermodynamicSystemContext
+    specific_heat_capacity_volumetric: float
+    gas_average_molar_mass: float
 
 class ThermodynamicPropertiesCalculator:
     """Class for calculating and displaying thermodynamic properties of the optimized system.
@@ -44,7 +62,7 @@ class ThermodynamicPropertiesCalculator:
         self.context = context
         self.filtered_products = filtered_products
 
-    def calculate_and_display_properties(self):
+    def calculate_and_display_properties(self) -> ThermodynamicPropertiesContext:
         """Calculate and display all thermodynamic properties of the optimized system.
 
         This method computes and prints the following thermodynamic properties:
@@ -60,6 +78,7 @@ class ThermodynamicPropertiesCalculator:
             - The results are printed directly to the console.
             - The context's `substance_amounts` attribute contains the optimized amounts.
         """
+
         # Basic properties
         total_moles = self.context.substance_amounts.sum()
         total_condensed_moles = np.sum(self.context.substance_amounts * self.context.is_condensed)
@@ -103,6 +122,12 @@ class ThermodynamicPropertiesCalculator:
         print("Heat capacity:", specific_heat_capacity)
         print("Specific heat ratio:", specific_heat_ratio)
         print("Volume heat capacity:", volume_heat_capacity)
+
+        return ThermodynamicPropertiesContext(
+            thermodynamic_system_context=self.context,
+            specific_heat_capacity_volumetric=volume_heat_capacity,
+            gas_average_molar_mass=average_molar_mass
+        )
 
     def _calculate_weight_fraction_of_condensed_products(self) -> float:
         """Calculate the total weight fraction of condensed products.

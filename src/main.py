@@ -85,7 +85,7 @@ def main():
             context=context,
             filtered_products=filtered_products
         )
-        thermo_calculator.calculate_and_display_properties()
+        thermo_properties_context = thermo_calculator.calculate_and_display_properties()
 
         # Write results to JSON if output path is provided
         if args.output_json:
@@ -97,7 +97,7 @@ def main():
             output_directory = os.path.dirname(output_json_path)
             os.makedirs(output_directory, exist_ok=True)  # Create directory if it doesn't exist
 
-            write_to_json(output_json_path, input_substance, total_mass, context, filtered_products)
+            write_to_json(output_json_path, input_substance, total_mass, thermo_properties_context, filtered_products)
             print(f"Results successfully written to {output_json_path}")
         else:
             print("Output JSON file path not provided. Skipping JSON generation.")
